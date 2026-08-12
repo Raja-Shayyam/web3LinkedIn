@@ -1,59 +1,50 @@
 ```
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
 # Dependencies
 node_modules/
 
-# Build artifacts
-artifacts/
-cache/
-
-# Environment variables
-.env*
+# Environment
+.env
+.env.local
+.env.*
 
 # Logs
 *.log
-
-# Coverage
-coverage/
-htmlcov/
-
-# IDE files
-.vscode/
-.idea/
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# TypeScript
-*.tsbuildinfo
 
 # Temporary files
 *.tmp
 *.temp
 
-# Package lock files
-package-lock.json
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Hardhat
-.hardhat/
-
-# Solidity
-.solhint.json
-.soliumrc.json
-
-# NPM
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Distribution / packaging
-*.tgz
-
-# Testing
-mocha.opts
+# OS
+.DS_Store
+Thumbs.db
 
 # Coverage
-.nyc_output/
 coverage/
+htmlcov/
+.coverage
 
+# Python (if applicable)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+.env
+.env.local
+.env.*
+.pytest_cache/
+.mypy_cache/
 ```
