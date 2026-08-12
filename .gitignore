@@ -1,0 +1,59 @@
+```
+# Dependencies
+node_modules/
+
+# Build artifacts
+artifacts/
+cache/
+
+# Environment variables
+.env*
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Temporary files
+*.tmp
+*.temp
+
+# Package lock files
+package-lock.json
+
+# Hardhat
+.hardhat/
+
+# Solidity
+.solhint.json
+.soliumrc.json
+
+# NPM
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Distribution / packaging
+*.tgz
+
+# Testing
+mocha.opts
+
+# Coverage
+.nyc_output/
+coverage/
+
+```
