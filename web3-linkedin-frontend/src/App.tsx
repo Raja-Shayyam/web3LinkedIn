@@ -1,263 +1,66 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { Header } from './components/Header';
 import { SignupModal } from './components/SignupModal';
 
-function App() {
-  const { isAuthenticated, walletAddress, userProfile, isLoading } = useAuth();
-  const [showSignupModal, setShowSignupModal] = useState(false);
+type Project = { id: number; title: string; description: string; visibility: string; status: string; budget_eth: number; recruiter_name?: string; created_at: string };
+type Milestone = { id: number; project_id: number; title: string; description: string; amount_eth: number; status: string; developer_name?: string; tx_hash?: string | null };
+const API = 'http://localhost:3001/api';
 
-  // Show signup modal when wallet is connected but no profile exists
+function App() {
+  const { isAuthenticated, walletAddress, userProfile, isLoading, error: authError } = useAuth();
+  const [showSignupModal, setShowSignupModal] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [activeView, setActiveView] = useState('overview');
+  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [projectForm, setProjectForm] = useState({ title: '', description: '', budget_eth: '0.1', visibility: 'public' });
+
   useEffect(() => {
-    if (walletAddress && !userProfile && !isLoading) {
-      setShowSignupModal(true);
-    }
+    if (walletAddress && !userProfile && !isLoading) setShowSignupModal(true);
   }, [walletAddress, userProfile, isLoading]);
 
-  if (isLoading) {
-    return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.spinner}></div>
-        <p>Loading Web3LinkedIn...</p>
-      </div>
-    );
+  useEffect(() => {
+    fetch(`${API}/projects`).then((r) => r.ok ? r.json() : { projects: [] }).then((data) => setProjects(data.projects || [])).catch(() => setProjects([]));
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!projects.length) return;
+    Promise.all(projects.map((p) => fetch(`${API}/projects/${p.id}/milestones`).then((r) => r.json()).catch(() => ({ milestones: [] })))).then((items) => setMilestones(items.flatMap((item) => item.milestones || [])));
+  }, [projects]);
+
+  const myProjects = useMemo(() => projects.filter((project) => project.recruiter_name === userProfile?.name), [projects, userProfile]);
+  const activeMilestones = milestones.filter((m) => ['active', 'pending', 'submitted'].includes(m.status));
+
+  async function createProject(event: React.FormEvent) {
+    event.preventDefault();
+    if (!userProfile) return;
+    const userResponse = await fetch(`${API}/users/${walletAddress}`);
+    const { user } = await userResponse.json();
+    const response = await fetch(`${API}/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recruiter_id: user.id, ...projectForm, budget_eth: Number(projectForm.budget_eth) }) });
+    if (!response.ok) { setNotice('Only recruiter profiles can publish projects.'); return; }
+    const data = await response.json();
+    setProjects((current) => [data.project, ...current]); setShowProjectForm(false); setProjectForm({ title: '', description: '', budget_eth: '0.1', visibility: 'public' }); setNotice('Project published successfully.');
   }
 
-  return (
-    <div style={styles.app}>
-      <Header />
-      
-      <main style={styles.main}>
-        {!isAuthenticated ? (
-          <div style={styles.landingPage}>
-            <div style={styles.hero}>
-              <h1 style={styles.heroTitle}>
-                Welcome to <span style={styles.highlight}>Web3LinkedIn</span>
-              </h1>
-              <p style={styles.heroSubtitle}>
-                The decentralized professional network powered by blockchain
-              </p>
-              
-              <div style={styles.features}>
-                <div style={styles.featureCard}>
-                  <span style={styles.featureIcon}>🔐</span>
-                  <h3>Wallet-Based Identity</h3>
-                  <p>Own your professional identity with cryptographic verification</p>
-                </div>
-                
-                <div style={styles.featureCard}>
-                  <span style={styles.featureIcon}>💼</span>
-                  <h3>Escrow Protection</h3>
-                  <p>Smart contracts ensure fair payment for freelance work</p>
-                </div>
-                
-                <div style={styles.featureCard}>
-                  <span style={styles.featureIcon}>⭐</span>
-                  <h3>On-Chain Reputation</h3>
-                  <p>Build trust through verifiable project completions</p>
-                </div>
-              </div>
+  if (isLoading) return <div className="loading-screen"><div className="mark">W</div><p>Preparing your workspace</p></div>;
 
-              <div style={styles.ctaSection}>
-                <p style={styles.ctaText}>
-                  Connect your wallet to get started
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={styles.dashboard}>
-            <div style={styles.welcomeCard}>
-              <h2 style={styles.welcomeTitle}>
-                Welcome back, {userProfile?.name}! 👋
-              </h2>
-              <p style={styles.welcomeSubtitle}>
-                You're signed in as a <strong>{userProfile?.role}</strong>
-              </p>
-              
-              <div style={styles.profileInfo}>
-                <div style={styles.infoRow}>
-                  <span style={styles.infoLabel}>Wallet:</span>
-                  <span style={styles.infoValue}>{walletAddress}</span>
-                </div>
-                <div style={styles.infoRow}>
-                  <span style={styles.infoLabel}>Trust Score:</span>
-                  <span style={styles.trustScore}>{userProfile?.trustScore}</span>
-                </div>
-                <div style={styles.infoRow}>
-                  <span style={styles.infoLabel}>Member Since:</span>
-                  <span style={styles.infoValue}>
-                    {userProfile?.signupTimestamp 
-                      ? new Date(userProfile.signupTimestamp).toLocaleDateString() 
-                      : 'N/A'}
-                  </span>
-                </div>
-              </div>
-
-              <div style={styles.comingSoon}>
-                <h3>🚀 Coming Soon</h3>
-                <ul style={styles.comingSoonList}>
-                  <li>Create/view projects</li>
-                  <li>Hire developers with escrow</li>
-                  <li>Submit milestone proofs</li>
-                  <li>Build on-chain reputation</li>
-                  <li>Search & discovery</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
-
-      <SignupModal 
-        isOpen={showSignupModal} 
-        onClose={() => setShowSignupModal(false)} 
-      />
-    </div>
-  );
+  return <div className="app-shell">
+    <Header />
+    {!isAuthenticated ? <main className="landing-main">
+      <section className="hero-section"><div className="eyebrow">THE PROFESSIONAL LAYER FOR WEB3</div><h1>Work you can <span>verify.</span><br />People you can trust.</h1><p className="hero-copy">A wallet-native professional network for discovering talent, showcasing real work, and completing projects with milestone-protected payments.</p><div className="hero-actions"><button className="primary-button" onClick={() => document.querySelector<HTMLButtonElement>('.connect-button')?.click()}>Connect wallet <span>→</span></button><span className="quiet-note">No gas required to create your profile</span></div></section>
+      <section className="signal-grid"><div className="signal-card"><span className="signal-index">01</span><strong>Own your identity</strong><p>Your profile is anchored to a wallet you control.</p></div><div className="signal-card"><span className="signal-index">02</span><strong>Show real work</strong><p>Projects, proof and reputation in one place.</p></div><div className="signal-card"><span className="signal-index">03</span><strong>Get paid fairly</strong><p>Milestones keep both sides accountable.</p></div></section>
+    </main> : <main className="workspace"><aside className="sidebar"><div className="side-label">WORKSPACE</div>{['overview', 'projects', 'contracts', 'profile'].map((view) => <button key={view} className={`side-link ${activeView === view ? 'active' : ''}`} onClick={() => setActiveView(view)}><span className="side-dot" />{view[0].toUpperCase() + view.slice(1)}{view === 'contracts' && activeMilestones.length > 0 && <small>{activeMilestones.length}</small>}</button>)}<div className="side-footer"><span className="status-dot" />Testnet connected</div></aside>
+      <section className="content"><div className="content-top"><div><div className="eyebrow">{userProfile?.role === 'recruiter' ? 'RECRUITER WORKSPACE' : 'DEVELOPER WORKSPACE'}</div><h1>{activeView === 'overview' ? `Good to see you, ${userProfile?.name?.split(' ')[0]}.` : activeView[0].toUpperCase() + activeView.slice(1)}</h1><p className="muted">{activeView === 'overview' ? 'Your professional graph, at a glance.' : 'Keep the important work moving.'}</p></div>{userProfile?.role === 'recruiter' && <button className="primary-button compact" onClick={() => setShowProjectForm(true)}>+ Publish project</button>}</div>{notice && <div className="notice">{notice}<button onClick={() => setNotice('')}>×</button></div>}
+        {activeView === 'overview' && <><div className="stat-row"><div className="stat-card"><span>PROFILE STATUS</span><strong>Verified</strong><em>Wallet ownership confirmed</em></div><div className="stat-card"><span>PROJECTS</span><strong>{myProjects.length || projects.length}</strong><em>Public opportunities</em></div><div className="stat-card"><span>TRUST SCORE</span><strong>{userProfile?.trustScore ?? 0}</strong><em>Built through completed work</em></div></div><div className="section-grid"><div className="panel"><div className="panel-heading"><div><span className="eyebrow">DISCOVER</span><h2>Open projects</h2></div><button className="text-button" onClick={() => setActiveView('projects')}>View all →</button></div>{projects.length ? projects.slice(0, 3).map((project) => <ProjectRow key={project.id} project={project} onClick={() => setNotice('Project details and access requests are next in the MVP flow.')} />) : <EmptyState text="No projects published yet." />}</div><div className="panel activity-panel"><div className="panel-heading"><div><span className="eyebrow">ON-CHAIN ACTIVITY</span><h2>Recent signals</h2></div></div><div className="activity-item"><span className="activity-icon">↗</span><div><strong>Wallet connected</strong><p>Identity established on testnet</p></div><time>Now</time></div><div className="activity-item"><span className="activity-icon">◇</span><div><strong>Reputation initialized</strong><p>Score starts at zero by design</p></div><time>Today</time></div></div></div></>}
+        {activeView === 'projects' && <div className="panel full-panel"><div className="panel-heading"><div><span className="eyebrow">PROJECT DIRECTORY</span><h2>Work looking for talent</h2></div>{userProfile?.role === 'recruiter' && <button className="primary-button compact" onClick={() => setShowProjectForm(true)}>+ New project</button>}</div>{projects.length ? projects.map((project) => <ProjectRow key={project.id} project={project} onClick={() => setNotice('Access request flow will use this project as its starting point.')} />) : <EmptyState text="The directory is empty. Publish the first project." />}</div>}
+        {activeView === 'contracts' && <div className="panel full-panel"><div className="panel-heading"><div><span className="eyebrow">MILESTONE ESCROW</span><h2>Your contracts</h2></div></div>{milestones.length ? milestones.map((milestone) => <div className="contract-row" key={milestone.id}><div className="contract-status"><span className={`status-pill ${milestone.status}`}>{milestone.status}</span><strong>{milestone.title}</strong><p>{milestone.description}</p></div><div className="contract-amount"><strong>{milestone.amount_eth} ETH</strong><span>Milestone amount</span></div><button className="outline-button" onClick={() => setNotice('Blockchain actions will connect when the new contract ABI is available.')}>Open</button></div>) : <EmptyState text="Your milestone contracts will appear here." />}</div>}
+        {activeView === 'profile' && <div className="profile-layout"><div className="profile-card"><div className="avatar">{userProfile?.name?.slice(0, 1) || 'W'}</div><span className="eyebrow">{userProfile?.role}</span><h2>{userProfile?.name}</h2><p className="muted">{userProfile?.email}</p><div className="wallet-line">{walletAddress?.slice(0, 10)}...{walletAddress?.slice(-8)}</div></div><div className="panel"><div className="panel-heading"><div><span className="eyebrow">PUBLIC PROFILE</span><h2>Trust, without the noise</h2></div></div><p className="body-copy">Your public profile will become the home for verified projects, completed milestones and professional connections.</p><div className="profile-points"><div><strong>0</strong><span>Completed projects</span></div><div><strong>0</strong><span>Connections</span></div><div><strong>{userProfile?.trustScore ?? 0}</strong><span>Trust score</span></div></div></div></div>}
+      </section></main>}
+    <SignupModal isOpen={showSignupModal} onClose={() => setShowSignupModal(false)} />{authError && !isAuthenticated && <div className="toast-error">{authError}</div>}{showProjectForm && <div className="modal-backdrop"><form className="project-form" onSubmit={createProject}><button type="button" className="close-button" onClick={() => setShowProjectForm(false)}>×</button><span className="eyebrow">NEW OPPORTUNITY</span><h2>Publish a project</h2><p className="muted">Give the right builder enough signal to start a conversation.</p><label>Project title<input required value={projectForm.title} onChange={(e) => setProjectForm({ ...projectForm, title: e.target.value })} placeholder="Build a token-gated portfolio" /></label><label>Description<textarea required value={projectForm.description} onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })} placeholder="What needs to be built?" /></label><div className="form-grid"><label>Budget (ETH)<input type="number" min="0" step="0.01" value={projectForm.budget_eth} onChange={(e) => setProjectForm({ ...projectForm, budget_eth: e.target.value })} /></label><label>Visibility<select value={projectForm.visibility} onChange={(e) => setProjectForm({ ...projectForm, visibility: e.target.value })}><option value="public">Public</option><option value="private">Private</option></select></label></div><button className="primary-button" type="submit">Publish project →</button></form></div>}
+  </div>;
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  app: {
-    minHeight: '100vh',
-    backgroundColor: '#f3f6f8',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-  },
-  loadingContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '100vh',
-    backgroundColor: '#f3f6f8',
-    gap: '16px'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #e0e0e0',
-    borderTop: '4px solid #0a66c2',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  main: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '40px 24px'
-  },
-  landingPage: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    paddingTop: '40px'
-  },
-  hero: {
-    textAlign: 'center',
-    maxWidth: '800px'
-  },
-  heroTitle: {
-    fontSize: '48px',
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: '16px'
-  },
-  highlight: {
-    color: '#0a66c2'
-  },
-  heroSubtitle: {
-    fontSize: '20px',
-    color: '#666',
-    marginBottom: '48px'
-  },
-  features: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '24px',
-    marginBottom: '48px'
-  },
-  featureCard: {
-    backgroundColor: '#fff',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    textAlign: 'center'
-  },
-  featureIcon: {
-    fontSize: '48px',
-    display: 'block',
-    marginBottom: '16px'
-  },
-  ctaSection: {
-    marginTop: '32px'
-  },
-  ctaText: {
-    fontSize: '18px',
-    color: '#666'
-  },
-  dashboard: {
-    display: 'flex',
-    justifyContent: 'center',
-    paddingTop: '20px'
-  },
-  welcomeCard: {
-    backgroundColor: '#fff',
-    padding: '40px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-    maxWidth: '600px',
-    width: '100%'
-  },
-  welcomeTitle: {
-    fontSize: '28px',
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: '8px'
-  },
-  welcomeSubtitle: {
-    fontSize: '16px',
-    color: '#666',
-    marginBottom: '32px'
-  },
-  profileInfo: {
-    backgroundColor: '#f8f9fa',
-    padding: '24px',
-    borderRadius: '8px',
-    marginBottom: '24px'
-  },
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '12px 0',
-    borderBottom: '1px solid #e0e0e0',
-    fontSize: '14px'
-  },
-  infoLabel: {
-    color: '#666',
-    fontWeight: '500'
-  },
-  infoValue: {
-    color: '#333',
-    fontFamily: 'monospace',
-    fontSize: '13px'
-  },
-  trustScore: {
-    color: '#0a66c2',
-    fontWeight: 'bold',
-    fontSize: '18px'
-  },
-  comingSoon: {
-    backgroundColor: '#fff9e6',
-    padding: '20px',
-    borderRadius: '8px',
-    border: '1px solid #ffd700'
-  },
-  comingSoonList: {
-    margin: '12px 0 0 0',
-    paddingLeft: '20px',
-    color: '#666',
-    fontSize: '14px',
-    lineHeight: '1.8'
-  }
-};
-
+function ProjectRow({ project, onClick }: { project: Project; onClick: () => void }) { return <button className="project-row" onClick={onClick}><span className="project-mark">{project.title.slice(0, 1)}</span><span className="project-copy"><strong>{project.title}</strong><p>{project.description}</p></span><span className="project-meta"><b>{project.budget_eth} ETH</b><small>{project.status}</small></span><span className="arrow">→</span></button>; }
+function EmptyState({ text }: { text: string }) { return <div className="empty-state"><span>◇</span><p>{text}</p></div>; }
 export default App;
