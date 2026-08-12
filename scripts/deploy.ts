@@ -1,41 +1,55 @@
-import { ethers } from 'hardhat';
-import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import hardhat from 'hardhat';
+
+const { ethers } = hardhat;
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 async function main() {
-  const escrow = await ethers.deployContract('LocalWeb3LinkedInEscrow');
-  await escrow.waitForDeployment();
-  const address = await escrow.getAddress();
-  console.log(`LocalWeb3LinkedInEscrow deployed to ${address}`);
+  const [admin] = await ethers.getSigners();
+  const delay = 0;
 
-  // Wire the address straight into the frontend so you don't have to hand-copy it.
-  const network = (await ethers.provider.getNetwork()).name;
-  const isLocal = network === 'localhost' || network === 'hardhat';
-  if (isLocal) {
-    const envPath = join(__dirname, '..', '..', '..', 'artifacts', 'web3-linkedin', '.env');
-    const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
-    const withoutOldAddress = existing.split('\n').filter((line) => !line.startsWith('VITE_ESCROW_ADDRESS=')).join('\n');
-    const next = `${withoutOldAddress.trim()}\nVITE_ESCROW_ADDRESS=${address}\n`;
-    writeFileSync(envPath, next.replace(/^\n+/, ''));
-    console.log(`Wrote VITE_ESCROW_ADDRESS to ${envPath}`);
-    console.log('Restart the frontend dev server so Vite picks up the new env value.');
-  }
+  const token = await ethers.deployContract('MockUSDC');
+  await token.waitForDeployment();
+
+  const profile = await ethers.deployContract('ProfileRegistry', [delay, admin.address]);
+  await profile.waitForDeployment();
+
+  const project = await ethers.deployContract('ProjectRegistry', [delay, admin.address]);
+  await project.waitForDeployment();
+
+  const escrow = await ethers.deployContract('MilestoneEscrow', [delay, admin.address]);
+  await escrow.waitForDeployment();
+  await (await escrow.allowToken(await token.getAddress())).wait();
+
+  const license = await ethers.deployContract('LicenseRegistry', [await project.getAddress(), delay, admin.address]);
+  await license.waitForDeployment();
+  await (await project.setLicenseRegistry(await license.getAddress())).wait();
+
+  const reputation = await ethers.deployContract('ReputationAttestation', [delay, admin.address]);
+  await reputation.waitForDeployment();
+  const referral = await ethers.deployContract('ReferralRegistry', [delay, admin.address]);
+  await referral.waitForDeployment();
+
+  const deployment = {
+    network: 'hardhat-local',
+    chainId: 31337,
+    deployer: admin.address,
+    MockUSDC: await token.getAddress(),
+    ProfileRegistry: await profile.getAddress(),
+    ProjectRegistry: await project.getAddress(),
+    MilestoneEscrow: await escrow.getAddress(),
+    LicenseRegistry: await license.getAddress(),
+    ReputationAttestation: await reputation.getAddress(),
+    ReferralRegistry: await referral.getAddress(),
+  };
+
+  const outputDir = join(process.cwd(), 'web3-linkedin-frontend', 'src', 'contracts');
+  mkdirSync(outputDir, { recursive: true });
+  writeFileSync(join(outputDir, 'local-deployment.json'), `${JSON.stringify(deployment, null, 2)}\n`);
+  console.log(JSON.stringify(deployment, null, 2));
 }
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-
-// import { ethers } from 'hardhat';
-
-// async function main() {
-//   const escrow = await ethers.deployContract('LocalWeb3LinkedInEscrow');
-//   await escrow.waitForDeployment();
-//   console.log(`LocalWeb3LinkedInEscrow deployed to ${await escrow.getAddress()}`);
-// }
-
-// main().catch((error) => {
-//   console.error(error);
-//   process.exitCode = 1;
-// });
