@@ -70,7 +70,9 @@ app.post('/api/auth/verify', async (req, res) => {
     
     // Parse SIWE message
     const siweMessage = new SiweMessage(message);
-    const { address, chainId } = await siweMessage.verify({ signature });
+    const verification = await siweMessage.verify({ signature });
+    if (!verification.success) return res.status(400).json({ error: 'Signature verification failed' });
+    const { address, chainId } = verification.data;
     
     const db = await readDB();
     const walletLower = address.toLowerCase();
@@ -216,7 +218,7 @@ app.get('/api/projects', async (req, res) => {
     
     // Filter by recruiter
     if (recruiter_id) {
-      projects = projects.filter(p => p.recruiter_id === parseInt(recruiter_id));
+      projects = projects.filter(p => p.recruiter_id === Number(String(recruiter_id)));
     }
     
     // Add recruiter info
@@ -385,6 +387,51 @@ app.put('/api/milestones/:milestoneId', async (req, res) => {
     console.error('Error updating milestone:', error);
     res.status(500).json({ error: 'Failed to update milestone' });
   }
+});
+
+// Backward-compatible profile update route used by the frontend.
+app.put('/api/profiles/:wallet', async (req, res) => {
+  req.url = `/api/users/${req.params.wallet}/profile`;
+  return app._router.handle(req, res, () => undefined);
+});
+
+app.get('/api/access-requests', async (req, res) => {
+  const db = await readDB();
+  res.json({ accessRequests: db.access_requests || [] });
+});
+
+app.post('/api/projects/:projectId/access-requests', async (req, res) => {
+  const { wallet, message = '' } = req.body;
+  if (!wallet) return res.status(400).json({ error: 'Wallet is required' });
+  const db = await readDB();
+  const projectId = Number(req.params.projectId);
+  const project = db.projects.find((item) => item.id === projectId);
+  const user = db.users.find((item) => item.wallet_address.toLowerCase() === String(wallet).toLowerCase());
+  if (!project || !user) return res.status(404).json({ error: 'Project or user not found' });
+  if (project.recruiter_id === user.id) return res.status(400).json({ error: 'Project owners cannot request their own access' });
+  db.access_requests ||= [];
+  const existing = db.access_requests.find((item) => item.project_id === projectId && item.requester_id === user.id && item.status === 'pending');
+  if (existing) return res.json({ accessRequest: existing });
+  const accessRequest = { id: db.access_requests.length + 1, project_id: projectId, requester_id: user.id, message, status: 'pending', created_at: new Date().toISOString() };
+  db.access_requests.push(accessRequest);
+  await writeDB(db);
+  res.status(201).json({ accessRequest });
+});
+
+app.post('/api/connections', async (req, res) => {
+  const { from_wallet, to_wallet } = req.body;
+  if (!from_wallet || !to_wallet) return res.status(400).json({ error: 'Both wallets are required' });
+  const db = await readDB();
+  db.connections ||= [];
+  const from = db.users.find((item) => item.wallet_address.toLowerCase() === String(from_wallet).toLowerCase());
+  const to = db.users.find((item) => item.wallet_address.toLowerCase() === String(to_wallet).toLowerCase());
+  if (!from || !to) return res.status(404).json({ error: 'User not found' });
+  const existing = db.connections.find((item) => item.from_user_id === from.id && item.to_user_id === to.id);
+  if (existing) return res.json({ connection: existing });
+  const connection = { id: db.connections.length + 1, from_user_id: from.id, to_user_id: to.id, status: 'pending', created_at: new Date().toISOString() };
+  db.connections.push(connection);
+  await writeDB(db);
+  res.status(201).json({ connection });
 });
 
 // Start server
