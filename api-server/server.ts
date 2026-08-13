@@ -389,6 +389,34 @@ app.put('/api/milestones/:milestoneId', async (req, res) => {
   }
 });
 
+app.get('/api/posts', async (_req, res) => {
+  const db = await readDB();
+  const posts = (db.posts || []).map((post) => ({ ...post, author: db.users.find((user) => user.id === post.author_id) }));
+  res.json({ posts });
+});
+
+app.post('/api/posts', async (req, res) => {
+  const { wallet, content, image_url = '' } = req.body;
+  if (!wallet || !String(content || '').trim()) return res.status(400).json({ error: 'Wallet and post content are required' });
+  const db = await readDB();
+  const author = db.users.find((user) => user.wallet_address.toLowerCase() === String(wallet).toLowerCase());
+  if (!author || author.role !== 'developer') return res.status(403).json({ error: 'Only student/developer profiles can publish posts' });
+  db.posts ||= [];
+  const post = { id: db.posts.length ? Math.max(...db.posts.map((item) => item.id)) + 1 : 1, author_id: author.id, content: String(content).trim(), image_url, likes: 0, created_at: new Date().toISOString() };
+  db.posts.unshift(post);
+  await writeDB(db);
+  res.status(201).json({ post: { ...post, author } });
+});
+
+app.post('/api/posts/:postId/like', async (req, res) => {
+  const db = await readDB();
+  const post = (db.posts || []).find((item) => item.id === Number(req.params.postId));
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  post.likes = Number(post.likes || 0) + 1;
+  await writeDB(db);
+  res.json({ post });
+});
+
 // Backward-compatible profile update route used by the frontend.
 app.put('/api/profiles/:wallet', async (req, res) => {
   req.url = `/api/users/${req.params.wallet}/profile`;
