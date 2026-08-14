@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 export type UserRole = 'developer' | 'recruiter';
 export interface UserProfile { walletAddress: string; email?: string; name?: string; role: UserRole; trustScore: number; signupTimestamp?: number; isProfileFrozen: boolean; }
 interface UseAuthResult { isAuthenticated: boolean; isLoading: boolean; walletAddress: string | null; userEmail: string | null; userProfile: UserProfile | null; connectWallet: () => Promise<void>; disconnectWallet: () => void; completeSignup: (email: string, name: string, role: UserRole) => Promise<void>; logout: () => void; error: string | null; }
-const API = 'http://localhost:3001/api';
+const API = import.meta.env.VITE_API_URL || '/api';
 const PROFILE_KEY = 'web3linkedin_user_profile';
 declare global { interface Window { ethereum?: any } }
 function notifyAuth() { window.dispatchEvent(new Event('web3linkedin-auth-change')); }
