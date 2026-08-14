@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix web3-linkedin-frontend run dev -- --host 0.0.0.0",
+    "dev": "npm --prefix web3-linkedin-frontend install --no-audit --no-fund && npm --prefix web3-linkedin-frontend run dev -- --host 0.0.0.0",
     "api": "npm --prefix api-server run dev",
     "build": "npm --prefix web3-linkedin-frontend run build",
     "compile": "hardhat compile",
