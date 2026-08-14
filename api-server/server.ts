@@ -173,7 +173,7 @@ app.get('/api/users/:wallet', async (req, res) => {
 app.put('/api/users/:wallet/profile', async (req, res) => {
   try {
     const { wallet } = req.params;
-    const { bio, skills, experience_years, portfolio_url, github_url, linkedin_url } = req.body;
+    const { name, email, bio, skills, experience_years, portfolio_url, github_url, linkedin_url } = req.body;
     
     const db = await readDB();
     const user = db.users.find(u => u.wallet_address.toLowerCase() === wallet.toLowerCase());
@@ -182,6 +182,8 @@ app.put('/api/users/:wallet/profile', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
+    if (name !== undefined) user.name = String(name).trim();
+    if (email !== undefined) user.email = String(email).trim();
     const profile = db.profiles.find(p => p.user_id === user.id);
     
     if (profile) {
@@ -396,13 +398,13 @@ app.get('/api/posts', async (_req, res) => {
 });
 
 app.post('/api/posts', async (req, res) => {
-  const { wallet, content, image_url = '' } = req.body;
-  if (!wallet || !String(content || '').trim()) return res.status(400).json({ error: 'Wallet and post content are required' });
+  const { wallet, content, title = '', post_type = 'project_update', skills = [], links = [], image_url = '' } = req.body;
+  if (!wallet || !String(title || '').trim() || !String(content || '').trim()) return res.status(400).json({ error: 'Post title and details are required' });
   const db = await readDB();
   const author = db.users.find((user) => user.wallet_address.toLowerCase() === String(wallet).toLowerCase());
   if (!author || author.role !== 'developer') return res.status(403).json({ error: 'Only student/developer profiles can publish posts' });
   db.posts ||= [];
-  const post = { id: db.posts.length ? Math.max(...db.posts.map((item) => item.id)) + 1 : 1, author_id: author.id, content: String(content).trim(), image_url, likes: 0, created_at: new Date().toISOString() };
+  const post = { id: db.posts.length ? Math.max(...db.posts.map((item) => item.id)) + 1 : 1, author_id: author.id, post_type, title: String(title).trim(), content: String(content).trim(), skills, links, image_url, likes: 0, created_at: new Date().toISOString() };
   db.posts.unshift(post);
   await writeDB(db);
   res.status(201).json({ post: { ...post, author } });
@@ -425,7 +427,24 @@ app.put('/api/profiles/:wallet', async (req, res) => {
 
 app.get('/api/access-requests', async (req, res) => {
   const db = await readDB();
-  res.json({ accessRequests: db.access_requests || [] });
+  const wallet = String(req.query.wallet || '').toLowerCase();
+  const user = db.users.find((item) => item.wallet_address.toLowerCase() === wallet);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const accessRequests = (db.access_requests || []).filter((item) => item.owner_id === user.id || item.requester_id === user.id).map((item) => ({ ...item, project: db.projects.find((project) => project.id === item.project_id), requester: db.users.find((person) => person.id === item.requester_id), owner: db.users.find((person) => person.id === item.owner_id) }));
+  res.json({ accessRequests });
+});
+
+app.patch('/api/access-requests/:requestId', async (req, res) => {
+  const { wallet, status } = req.body;
+  if (!wallet || !['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Owner wallet and valid status are required' });
+  const db = await readDB();
+  const owner = db.users.find((item) => item.wallet_address.toLowerCase() === String(wallet).toLowerCase());
+  const request = (db.access_requests || []).find((item) => item.id === Number(req.params.requestId));
+  if (!owner || !request || request.owner_id !== owner.id) return res.status(403).json({ error: 'Only the project owner can review this request' });
+  request.status = status;
+  request.reviewed_at = new Date().toISOString();
+  await writeDB(db);
+  res.json({ accessRequest: request });
 });
 
 app.post('/api/projects/:projectId/access-requests', async (req, res) => {
@@ -440,7 +459,7 @@ app.post('/api/projects/:projectId/access-requests', async (req, res) => {
   db.access_requests ||= [];
   const existing = db.access_requests.find((item) => item.project_id === projectId && item.requester_id === user.id && item.status === 'pending');
   if (existing) return res.json({ accessRequest: existing });
-  const accessRequest = { id: db.access_requests.length + 1, project_id: projectId, requester_id: user.id, message, status: 'pending', created_at: new Date().toISOString() };
+  const accessRequest = { id: db.access_requests.length + 1, project_id: projectId, owner_id: project.recruiter_id, requester_id: user.id, message, status: 'pending', created_at: new Date().toISOString() };
   db.access_requests.push(accessRequest);
   await writeDB(db);
   res.status(201).json({ accessRequest });
