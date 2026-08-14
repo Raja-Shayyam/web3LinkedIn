@@ -414,9 +414,36 @@ app.post('/api/posts/:postId/like', async (req, res) => {
   const db = await readDB();
   const post = (db.posts || []).find((item) => item.id === Number(req.params.postId));
   if (!post) return res.status(404).json({ error: 'Post not found' });
+  db.post_likes ||= [];
+  const wallet = String(req.body?.wallet || '').toLowerCase();
+  const user = db.users.find((item) => item.wallet_address.toLowerCase() === wallet);
+  const alreadyLiked = user && db.post_likes.some((item) => item.post_id === post.id && item.user_id === user.id);
+  if (alreadyLiked) return res.json({ post, liked: true });
+  if (user) db.post_likes.push({ post_id: post.id, user_id: user.id, created_at: new Date().toISOString() });
   post.likes = Number(post.likes || 0) + 1;
   await writeDB(db);
-  res.json({ post });
+  res.json({ post, liked: true });
+});
+
+app.patch('/api/posts/:postId', async (req, res) => {
+  const db = await readDB();
+  const post = (db.posts || []).find((item) => item.id === Number(req.params.postId));
+  const author = db.users.find((item) => item.wallet_address.toLowerCase() === String(req.body?.wallet || '').toLowerCase());
+  if (!post || !author || post.author_id !== author.id) return res.status(403).json({ error: 'Only the post author can edit this post' });
+  for (const field of ['title', 'content', 'post_type', 'skills', 'links', 'image_url']) if (req.body[field] !== undefined) post[field] = req.body[field];
+  post.updated_at = new Date().toISOString();
+  await writeDB(db);
+  res.json({ post: { ...post, author } });
+});
+
+app.delete('/api/posts/:postId', async (req, res) => {
+  const db = await readDB();
+  const index = (db.posts || []).findIndex((item) => item.id === Number(req.params.postId));
+  const author = db.users.find((item) => item.wallet_address.toLowerCase() === String(req.body?.wallet || req.query.wallet || '').toLowerCase());
+  if (index < 0 || !author || db.posts[index].author_id !== author.id) return res.status(403).json({ error: 'Only the post author can delete this post' });
+  db.posts.splice(index, 1);
+  await writeDB(db);
+  res.status(204).end();
 });
 
 // Backward-compatible profile update route used by the frontend.
@@ -443,8 +470,29 @@ app.patch('/api/access-requests/:requestId', async (req, res) => {
   if (!owner || !request || request.owner_id !== owner.id) return res.status(403).json({ error: 'Only the project owner can review this request' });
   request.status = status;
   request.reviewed_at = new Date().toISOString();
+  db.collaborations ||= [];
+  if (status === 'approved' && !db.collaborations.some((item) => item.project_id === request.project_id && item.developer_id === request.requester_id)) db.collaborations.push({ id: db.collaborations.length + 1, project_id: request.project_id, developer_id: request.requester_id, status: 'approved', created_at: new Date().toISOString() });
   await writeDB(db);
   res.json({ accessRequest: request });
+});
+
+app.get('/api/projects/:projectId/collaborators', async (req, res) => {
+  const db = await readDB();
+  const collaborators = (db.collaborations || []).filter((item) => item.project_id === Number(req.params.projectId)).map((item) => ({ ...item, developer: db.users.find((user) => user.id === item.developer_id) }));
+  res.json({ collaborators });
+});
+
+app.post('/api/projects/:projectId/milestones/from-approved', async (req, res) => {
+  const { wallet, developer_id, title, description, amount_eth } = req.body;
+  const db = await readDB();
+  const project = db.projects.find((item) => item.id === Number(req.params.projectId));
+  const owner = db.users.find((item) => item.wallet_address.toLowerCase() === String(wallet || '').toLowerCase());
+  const approved = (db.collaborations || []).some((item) => item.project_id === project?.id && item.developer_id === Number(developer_id) && item.status === 'approved');
+  if (!project || !owner || project.recruiter_id !== owner.id || !approved) return res.status(403).json({ error: 'Owner and approved collaborator are required' });
+  const milestone = { id: db.milestones.length + 1, project_id: project.id, developer_id: Number(developer_id), title, description, amount_eth: Number(amount_eth), status: 'pending', contract_id: null, created_at: new Date().toISOString() };
+  db.milestones.push(milestone);
+  await writeDB(db);
+  res.status(201).json({ milestone });
 });
 
 app.post('/api/projects/:projectId/access-requests', async (req, res) => {
